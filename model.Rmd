@@ -1,0 +1,41 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(readxl)
+```
+
+
+```{r fig.height=2, fig.width=4}
+k2=0.5
+k=20
+Thr<-k2/(k+2*k2)
+v0=seq(0.7,1.3,0.01)
+
+# cdr2d
+y=Thr*(k+k2*v0)/(k2-k2*Thr)
+add<-data.frame(v0=v0,as=y)
+add$str<-"cdr2d"
+
+# Perfect sizer
+add<-rbind(add,data.frame(v0=v0,as=2-v0,str="ps"))
+ggplot(add,aes(x=v0,y=as,color=str))+
+  geom_line(size=2)+theme_classic()
+```
+
+```{r}
+lm(as~v0,add%>%filter(str=="cdr2d"))
+lm(as~v0,add%>%filter(str=="ps"))
+```
+
+
+```{r}
+#generating csv file
+#write.csv2(add,"add.csv")
+write_excel_csv(add,"add.csv")
+```
+
