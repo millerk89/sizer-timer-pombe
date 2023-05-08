@@ -1,0 +1,209 @@
+---
+title: "overlap"
+output: html_notebook
+---
+
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+#library(overlapping)
+```
+```{r}
+vol <- read_excel("vol.xlsx")
+head(vol)
+unique(vol)
+```
+```{r}
+ggplot(vol)+geom_density(aes(x=vol,fill=strain,color=strain),alpha=0.5,size=1)+
+  scale_color_manual(values=c("black","#008000","magenta"))+
+  scale_fill_manual(values=c("black","#008000","magenta"))+scale_x_log10()
+ggplot(vol)+geom_histogram(aes(x=vol,fill=strain),stat="density",position = "dodge")
+```
+```{r}
+overlap(list(str1=(vol%>%filter(strain=="ppa2Δ"))$vol,
+             str2=(vol%>%filter(strain=="ppa2Δrga2Δ"))$vol,
+             str3=(vol%>%filter(strain=="ppa2Δrga4Δ"))$vol))
+```
+```{r}
+volov<-boot.overlap(list(str1=(vol%>%filter(strain=="ppa2Δ"))$vol,
+             str2=(vol%>%filter(strain=="ppa2Δrga2Δ"))$vol,
+             str3=(vol%>%filter(strain=="ppa2Δrga4Δ"))$vol),B=1000)
+ovsts<-data.frame(ov=t(volov$OVboot_dist),prp="vol")
+```
+
+```{r}
+sa <- read_excel("sa.xlsx")
+head(sa)
+```
+
+```{r}
+ggplot(sa)+geom_density(aes(x=sa,fill=strain,color=strain),alpha=0.5,size=1)+
+  scale_color_manual(values=c("black","#008000","magenta"))+
+  scale_fill_manual(values=c("black","#008000","magenta"))+scale_x_log10()
+ggplot(sa)+geom_histogram(aes(x=sa,fill=strain),stat="density",position = "dodge")
+```
+
+```{r}
+overlap(list(str1=(sa%>%filter(strain=="ppa2Δ"))$sa,
+             str2=(sa%>%filter(strain=="ppa2Δrga2Δ"))$sa,
+             str3=(sa%>%filter(strain=="ppa2Δrga4Δ"))$sa))
+```
+```{r}
+saov<-boot.overlap(list(str1=(sa%>%filter(strain=="ppa2Δ"))$sa,
+             str2=(sa%>%filter(strain=="ppa2Δrga2Δ"))$sa,
+             str3=(sa%>%filter(strain=="ppa2Δrga4Δ"))$sa),B=1000)
+ovsts<-ovsts%>%rbind(data.frame(ov=t(saov$OVboot_dist),prp="sa"))
+  
+```
+
+```{r}
+g<-ggplot(ovsts,aes(x=as.factor(prp),y=ov,fill=as.factor(prp)))+geom_boxplot(notch = TRUE)+
+  scale_y_log10()
+g
+```
+```{r}
+ggplotly(g)
+ovsts%>%group_by(prp)%>%summarise(mean=mean(ov),median(ov),sqrt(var(ov)))
+```
+```{r}
+write.csv(ovsts,"ovsts.csv")
+```
+
+```{r}
+overlap <- function(x, nbins = 1024, plot = FALSE, 
+                    partial.plot = FALSE, boundaries = NULL, ... ) {
+
+  if (is.null(names(x))) names(x) <- paste("Y", 1:length(x), sep = "")
+  dd <- OV <- FUNC <- DD <- xpoints <- COMPTITLE <- NULL
+  
+  ## density estimation
+  for (j in 1:length(x)) {
+    
+    ## boundaries check
+    if (!is.null(boundaries)) {
+      
+      Lbound <- lapply(boundaries,FUN=length)
+      if ((Lbound$from==1)&(Lbound$to==1)) {
+        warning("Boundaries were set all equals")
+        boundaries$from <- rep(boundaries$from,length(x))
+        boundaries$to <- rep(boundaries$to,length(x))
+      } else {
+        if ((Lbound$from!=length(x))|(Lbound$to!=length(x))) {
+          stop("Boundaries not correctly defined")
+        }
+      }
+      
+      from = boundaries$from[j]
+      to = boundaries$to[j]
+      dj <- density(x[[j]], n = nbins, from = from, to = to, ... )
+    } else {
+      dj <- density(x[[j]], n = nbins, ... )  
+    }
+    
+    ddd <- data.frame(x = dj$x, y = dj$y, j = names(x)[j]) 
+    FUNC <- c(FUNC, list(with(ddd,approxfun(x,y))))
+    dd <- rbind(dd, ddd)
+  }
+  
+  #for (i1 in 1:(length(x)-1)) {
+    #for (i2 in (i1+1):(length(x))) {
+      #comptitle <- paste0(names(x)[i1],"-",names(x)[i2])
+      
+      dd2 <- data.frame(x=dd$x,y1=FUNC[[1]](dd$x),y2=FUNC[[2]](dd$x),y3=FUNC[[3]](dd$x))    
+      dd2[is.na(dd2)] <- 0
+      dd2$ovy <- apply(dd2[,c("y1","y2","y3")],1,min)
+      dd2$ally <- apply(dd2[,c("y1","y2","y3")],1,max,na.rm=TRUE)
+      #dd2$dominance <- ifelse(dd2$y1>dd2$y2,1,2)
+      #dd2$k <- comptitle
+      
+      OV <- c(OV,sum(dd2$ovy,na.rm = TRUE) / sum(dd2$ally,na.rm = TRUE))
+      
+      #dd2 <- dd2[order(dd2$x),]
+      #CHANGE <- dd2$x[which(dd2$dominance[2:nrow(dd2)]!=dd2$dominance[1:(nrow(dd2)-1)])]
+      #xpoints <- c(xpoints,list(CHANGE))
+      
+      #if (partial.plot) {
+      #  gg <- ggplot(dd2,aes(x,dd2$y1))+theme_bw()+
+      #    geom_vline(xintercept = CHANGE,lty=2,color="#cccccc")+
+      #    geom_line()+geom_line(aes(x,dd2$y2))+
+      #    geom_line(aes(x,dd2$ovy),color="red")+geom_line(aes(x,dd2$ally),color="blue")+
+      #    ggtitle(comptitle)+xlab("")+ylab("")+
+      #    theme(plot.title = element_text(hjust=.5))
+      #  print(gg)
+      #}
+      #DD <- rbind(DD,dd2)
+      #COMPTITLE <- c(COMPTITLE,comptitle)
+    #}
+  #}
+  
+  names(xpoints) <- names(OV) <- COMPTITLE
+  if (plot) print( final.plot(x,OV) )
+  return(OV)
+}
+```
+
+```{r}
+boot.overlap <- function( x, B = 1000, ... ) {
+  out <- overlap( x, ... ) 
+  
+  outb <- t(sapply(1:B, function(b){
+    xb <- lapply( x, FUN = sample, replace = TRUE )
+    out2 <- overlap( xb )
+  }))
+  
+  if (nrow(outb)>1) {
+    bias <- apply(outb,2,mean) - out
+    se <- apply(outb,2,sd) 
+  } else {
+    bias <- mean(outb) - out
+    se <- sd(outb)
+  }
+  
+  OVboot <- data.frame(estOV=out,bias=bias,se=se)
+  return(list(OVboot_stats=OVboot,OVboot_dist=outb))
+}
+```
+
+```{r}
+rga2delta_cdc13_L_cdc2as_DMSO <- read_excel("D:/personal/OneDrive/Documents/fission_yeast/overlap/try_first/rga2delta_cdc13_L_cdc2as_DMSO.xlsx")
+head(rga2delta_cdc13_L_cdc2as_DMSO)
+cdc13_L_cdc2asDMSO <- read_excel("D:/personal/OneDrive/Documents/fission_yeast/overlap/try_first/cdc13_L_cdc2asDMSO.xlsx")
+```
+
+```{r}
+data<-list(st1=rga2delta_cdc13_L_cdc2as_DMSO$sa,st2=cdc13_L_cdc2asDMSO$sa)
+out<-overlap(data)
+out
+```
+```{r}
+rga2delta_cdc13_L_cdc2as_DMSO$str<-"rga2delta_cdc13_L_cdc2as_DMSO"
+cdc13_L_cdc2asDMSO$str<-"cdc13_L_cdc2asDMSO"
+df<-rbind(rga2delta_cdc13_L_cdc2as_DMSO,cdc13_L_cdc2asDMSO)
+```
+```{r}
+ggplot(df)+geom_density(aes(x=sa,fill=str),alpha=0.5)
+```
+```{r}
+vol <- read_excel("D:/personal/OneDrive/Documents/fission_yeast/overlap/try_first/vol.xlsx")
+```
+
+```{r}
+ggplot(vol)+geom_density(aes(x=vol,fill=strain),alpha=0.5)
+```
+```{r}
+vol%>%
+  group_by(strain)%>%
+  summarize(mv=mean(vol),sd=sqrt(var(vol)))
+
+dnorm(-abs(163-137)/(2*12.5))
+```
+
+```{r}
+
+data<-list(st1=(vol%>%filter(strain=="cdc13-L-cdc2as DMSO"))$vol,st2=(vol%>%filter(strain=="rga2Δ cdc13-L-cdc2as DMSO"))$vol)
+out<-overlap(data)
+out
+```
